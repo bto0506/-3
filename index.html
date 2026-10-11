@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Love Heart</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #060208;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            background-color: #060208;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="heartCanvas" width="800" height="800"></canvas>
+
+    <script>
+        const canvas = document.getElementById('heartCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const SC = 21;
+        const BG = "#060208";
+
+        const PHRASES = [
+            "I love you", "Seni seviyorum", "Te amo", "Je t'aime",
+            "Ich liebe dich", "Ti amo", "Eu te amo", "Я тебя люблю",
+            "사랑해", "愛してる", "我爱你", "मैं तुमसे प्यार करता हूँ",
+            "Σ' αγαπώ", "Ik hou van jou", "Jag älskar dig", "Kocham cię",
+            "ฉันรักเธอ", "Anh yêu em", "Aku cinta kamu", "Я тебе кохаю"
+        ];
+
+        const SIZES = [9, 10, 11, 12];
+        let ORDER = [];
+        let active = [];
+        let spawning = true;
+        let itemsIndex = 0;
+        let acc = 0.0;
+
+        // Fórmula del corazón centrada en (400, 400)
+        function heart(a) {
+            let x = 16 * Math.pow(Math.sin(a), 3);
+            let y = 13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a);
+            return {
+                x: 400 + x * SC,
+                y: 400 - y * SC  // Invertimos Y para que el canvas de HTML lo dibuje derecho
+            };
+        }
+
+        const POLY = [];
+        for (let i = 0; i < 720; i++) {
+            POLY.push(heart(2 * Math.PI * i / 720));
+        }
+
+        const YMAX = Math.max(...POLY.map(p => p.y));
+        const YMIN = Math.min(...POLY.map(p => p.y));
+        const CY = (YMAX + YMIN) / 2;
+
+        function spans(y) {
+            let xs = [];
+            for (let i = 0; i < POLY.length; i++) {
+                let p1 = POLY[i];
+                let p2 = POLY[(i + 1) % POLY.length];
+                if ((p1.y <= y && y < p2.y) || (p2.y <= y && y < p1.y)) {
+                    xs.push(p1.x + (y - p1.y) * (p2.x - p1.x) / (p2.y - p1.y));
+                }
+            }
+            xs.sort((a, b) => a - b);
+            let ranges = [];
+            for (let i = 0; i < xs.length; i += 2) {
+                if (xs[i+1] !== undefined) ranges.push([xs[i], xs[i+1]]);
+            }
+            return ranges;
+        }
+
+        function intersect(A, B) {
+            let out = [];
+            for (let a of A) {
+                for (let b of B) {
+                    let lo = Math.max(a[0], b[0]);
+                    let hi = Math.min(a[1], b[1]);
+                    if (hi - lo > 14) {
+                        out.push([lo, hi]);
+                    }
+                }
+            }
+            return out;
+        }
+
+function build() {
+            let row_h = 18;
+            let half = row_h / 2;
+            let list = [];
+            let phraseIter = 0;
+
+            for (let y = YMIN + half; y < YMAX - half; y += row_h) {
+                let row = intersect(spans(y + half), spans(y - half));
+                for (let [lo, hi] of row) {
+                    lo += 4; hi -= 4;
+                    let cur = lo + 4;
+                    let line = [];
+
+                    while (true) {
+                        let text = PHRASES[phraseIter % PHRASES.length];
+                        phraseIter++;
+                        let size = SIZES[Math.floor(Math.random() * SIZES.length)];
+                        
+                        ctx.font = `bold ${size}px Arial`;
+                        let w = ctx.measureText(text).width;
+
+                        if (cur + w <= hi) {
+                            line.push({ text: text, size: size, w: w });
+                            cur += w + 7;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if (line.length > 0) {
+                        // Calcular el ancho total de la línea de textos y centrarla bonito en el span
+                        let totalW = line.reduce((sum, item) => sum + item.w, 0) + (line.length - 1) * 7;
+                        let startX = lo + (hi - lo - totalW) / 2;
+                        let currentX = startX;
+
+                        for (let i = 0; i < line.length; i++) {
+                            let itemX = currentX + line[i].w / 2;
+                            currentX += line[i].w + 7;
+
+                            let dx = Math.hypot((itemX - 400) / (16 * SC), (y - CY) / (14.5 * SC));
+                            dx = Math.min(1.0, dx);
+                            
+                            let r = Math.floor((0.58 + 0.4 * dx) * 255);
+                            let g = Math.floor((0.05 * dx) * 255);
+                            let b = Math.floor((0.09 + 0.1 * dx) * 255);
+                            let color = `rgb(${r}, ${g}, ${b})`;
+
+                            list.push({
+                                x: itemX,
+                                y: y,
+                                text: line[i].text,
+                                size: line[i].size,
+                                color: color,
+                                f: 0,
+                                dx: (Math.random() - 0.5) * 20
+                            });
+                        }
+                    }
+                }
+            }
+            return list;
+        }
+
+        // Inicializar
+        ORDER = build();
+        const RATE = ORDER.length / (10 * 1000 / 16);
+
+        function step() {
+            ctx.fillStyle = BG;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (spawning) {
+                acc += RATE;
+                while (acc >= 1 && itemsIndex < ORDER.length) {
+                    acc -= 1;
+                    active.push(ORDER[itemsIndex]);
+                    itemsIndex++;
+                }
+                if (itemsIndex >= ORDER.length) {
+                    spawning = false;
+                }
+            }
+
+            for (let p of active) {
+                if (p.f < 42) p.f++;
+
+                let u = p.f / 42;
+                let e = 1 - Math.pow(1 - u, 3);
+                let hover = (1 - e) * 34;
+                let px = p.x + p.dx * (1 - e);
+                let py = p.y - hover;
+
+                ctx.font = `bold ${p.size}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = p.color;
+                ctx.fillText(p.text, px, py);
+
+                if (u >= 1) {
+                    p.x = px;
+                    p.y = py;
+                }
+            }
+
+            requestAnimationFrame(step);
+        }
+
+        requestAnimationFrame(step);
+    </script>
+</body>
+</html>
